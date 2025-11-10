@@ -1,4 +1,4 @@
-    # 🧠 SalesCode.ai Final Round Qualifier  
+    # 🧠 SalesCode.ai 
     ## LiveKit Voice Interruption Handling Challenge  
     ### Author: Arnab Das  
     Branch: `feature/livekit-interrupt-handler-arnab`
