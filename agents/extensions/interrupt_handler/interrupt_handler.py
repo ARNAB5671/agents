@@ -22,8 +22,37 @@ class Decision(Enum):
 def tokenize(text: str) -> List[str]:
     return re.findall(r"\w+", (text or "").lower())
 
+# --- Multilingual filler normalization ---
+def normalize_text(text: str) -> str:
+    """
+    Normalize text to handle multilingual fillers (Hindi + English mix).
+    Example: 'acha', 'achha', 'haan', 'haanji', 'ummm', 'hmmm', etc.
+    """
+    text = text.lower().strip()
+
+    # Replace common Hindi/English filler variants with canonical forms
+    replacements = {
+        r"ach+?a+": "acha",
+        r"ha+?n+": "haan",
+        r"arre+": "arre",
+        r"umm+": "umm",
+        r"uh+": "uh",
+        r"hmm+": "hmm",
+        r"em+": "em",
+        r"ok+?ay*": "ok",
+        r"th(e)?ek\s*hai": "theek hai",
+        r"cha?lo+": "chalo",
+    }
+
+    for pattern, replacement in replacements.items():
+        text = re.sub(pattern, replacement, text)
+
+    return text
+
+
 # Default configuration
-DEFAULT_IGNORED = ["uh", "um","umm", "hmm", "haan", "acha", "em"]
+DEFAULT_IGNORED = ["uh", "um", "umm", "hmm", "haan", "acha", "em", "arre", "chalo", "theek", "theek hai"]
+
 
 DEFAULT_STOP_WORDS = ["stop", "wait", "hold on", "pause", "no not that one"]
 
@@ -62,11 +91,21 @@ class InterruptHandler:
         self.agent_state = AgentState()
         self._logs: List[Dict] = []
 
+    def update_ignored_words(self, new_words: List[str]):
+            """
+            Dynamically update the ignored filler words at runtime.
+            """
+            before = self.ignored_words.copy()
+            self.ignored_words = set(new_words)
+            print(f"[CONFIG] Ignored words updated from {before} -> {self.ignored_words}")
+
+
     async def handle_transcript(
         self, text: str, confidence: float, is_final: bool = True, metadata: Optional[Dict] = None
     ) -> Decision:
         """Main logic to decide whether to IGNORE, INTERRUPT, or FORWARD."""
         metadata = metadata or {}
+        text = normalize_text(text)
         tokens = tokenize(text)
         tokens = [t for t in tokens if len(t) > 1]  # new: ignore 1-letter tokens
 
