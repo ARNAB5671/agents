@@ -23,7 +23,7 @@ def tokenize(text: str) -> List[str]:
     return re.findall(r"\w+", (text or "").lower())
 
 # Default configuration
-DEFAULT_IGNORED = ["uh", "umm", "hmm", "haan", "acha", "em"]
+DEFAULT_IGNORED = ["uh", "um","umm", "hmm", "haan", "acha", "em"]
 
 DEFAULT_STOP_WORDS = ["stop", "wait", "hold on", "pause", "no not that one"]
 
@@ -71,12 +71,8 @@ class InterruptHandler:
         tokens = [t for t in tokens if len(t) > 1]  # new: ignore 1-letter tokens
 
         speaking = await self.agent_state.is_speaking()
-        # Immediate interrupt if a clear stop/command phrase exists
-        for sw in self.stop_words:
-            if sw and sw in text.lower():
-                self._log("INTERRUPT_STOP_WORD", text, confidence, metadata, {"matched": sw})
-                return Decision.INTERRUPT
-#above part if a phrase like "umm okay stop" or "hmm wait" appears — the agent instantly stops before doing other checks.
+
+        
 
         # Case 1: agent is speaking and user sound is low-confidence (background murmur)
         if speaking and confidence <= self.low_confidence_threshold:
@@ -85,22 +81,44 @@ class InterruptHandler:
         
         def is_filler(word, ignored):
             for ig in ignored:
-                if word.startswith(ig) or ig in word:  # e.g. "ummm" starts with "umm"
+                # matches um, umm, ummm, uhhh, etc. safely
+                if re.fullmatch(fr"{ig}+", word):
                     return True
             return False
+
 
 
         # Case 2: agent is speaking — check if it's filler or real interruption
         if speaking:
             # Remove filler tokens
-            DISCOURSE = {"so", "anyway", "yeah", "well", "right", "like", "ok", "okay", "sure"}
+            # Replace this
+            for sw in self.stop_words:
+                if sw and sw in text.lower():
+                    self._log("INTERRUPT_STOP_WORD", text, confidence, metadata, {"matched": sw})
+                    return Decision.INTERRUPT
+#above part if a phrase like "umm okay stop" or "hmm wait" appears — the agent instantly stops before doing other checks.
+            DISCOURSE = {"so", "anyway", "yeah", "well", "right", "like", "sure","ok"}
+
+            # Keep "okay" special-cased
+            def is_soft_acknowledgment(text: str) -> bool:
+                cleaned = text.strip().lower()
+                # "ok" or "okay" alone -> ignore
+                if re.fullmatch(r"(ok(?:ay)?|haan|hmm|yeah)[.! ]*$", cleaned):
+                    return True
+                # "ok stop", "ok fine" etc. -> meaningful (not soft ack)
+                return False
+
+            if is_soft_acknowledgment(text):
+                self._log("IGNORED_ACK", text, confidence, metadata)
+                return Decision.IGNORED
             tokens = [t for t in tokens if t not in DISCOURSE]
 #These are “flow” words — they don’t mean interruption but are often picked up as text.
 #This ensures sentences like "uh so anyway yeah" don’t cause interruption.
             # Ignore incomplete short fragments like 'wa', 'st', 'wai' if confidence is low
-            if speaking and max((len(t) for t in tokens), default=0) <= 3 and confidence < 0.7:
+            if speaking and all(len(t) <= 3 for t in tokens) and confidence < 0.7:
                 self._log("IGNORED_PARTIAL_TOKENS", text, confidence, metadata, {"tokens": tokens})
                 return Decision.IGNORED
+
 
             meaningful = [t for t in tokens if not is_filler(t, self.ignored_words)]
             if not meaningful:
